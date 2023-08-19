@@ -3,19 +3,21 @@
 
 using System.CommandLine.Parsing;
 using Arctium.WoW.Launcher;
+
 using static Arctium.WoW.Launcher.Misc.Helpers;
 
 // "Arctium" should not be removed from the final binary name.
-if (!Process.GetCurrentProcess().ProcessName.ToLowerInvariant().Contains("arctium"))
+if (!Process.GetCurrentProcess().ProcessName.Contains("arctium", StringComparison.InvariantCultureIgnoreCase))
     WaitAndExit();
 
 PrintHeader("WoW Client Launcher");
 
-LaunchOptions.RootCommand.SetHandler(context =>
+LaunchOptions.RootCommand.SetHandler(async context =>
 {
     CreateDevIPFilter(out var ipFilter);
 
-    var appPath = Launcher.PrepareGameLaunch(context.ParseResult, ipFilter);
+    // Prefer / instead of \ for the client path.
+    var appPath = (await Launcher.PrepareGameLaunch(context.ParseResult, ipFilter)).Replace("\\", "/");
     var gameCommandLine = string.Join(" ", context.ParseResult.UnmatchedTokens);
 
     // Add config parameter to the game command line.
@@ -26,6 +28,7 @@ LaunchOptions.RootCommand.SetHandler(context =>
 });
 
 await LaunchOptions.Instance.InvokeAsync(args);
+return;
 
 void CreateDevIPFilter(out IPFilter ipFilter)
 {

@@ -2,11 +2,21 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Net;
+using System.Net.Sockets;
 
 namespace Arctium.WoW.Launcher.Misc;
 
 static class Helpers
 {
+    public static bool IsDebugBuild()
+    {
+#if DEBUG
+        return true;
+#else
+        return false;
+#endif
+    }
+
     public static (int Major, int Minor, int Revision, int Build) GetVersionValueFromClient(string fileName)
     {
         var fileVersionInfo = FileVersionInfo.GetVersionInfo(fileName);
@@ -44,7 +54,7 @@ static class Helpers
         Console.WriteLine($"Operating System: {RuntimeInformation.OSDescription}");
     }
 
-    public static ReadOnlySpan<char> ParsePortal(string config)
+    public static (string IPAddress, string HostName, int Port) ParsePortal(string config)
     {
         const string portalKey = "SET portal";
 
@@ -67,16 +77,49 @@ static class Helpers
         var portalSpan = config.AsSpan(startQuoteIndex + 1, portalLength);
         var colonIndex = portalSpan.IndexOf(':');
         var ipSpan = colonIndex != -1 ? portalSpan[..colonIndex] : portalSpan;
+        var port = colonIndex != -1 ? int.Parse(portalSpan[(colonIndex + 1)..]) : 1119;
         var portalString = ipSpan.ToString().Trim();
 
-        if (IPAddress.TryParse(portalString, out var ipAddress))
-            return ipAddress.ToString().AsSpan();
+        try
+        {
+            if (IPAddress.TryParse(portalString, out var ipAddress))
+                return (ipAddress.ToString(), portalString, port);
 
-        var ipv4Address = Dns.GetHostAddresses(portalString).FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            var ipv4Address = Dns.GetHostAddresses(portalString).FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
 
-        if (ipv4Address == null)
-            throw new Exception("No IPv4 address found for the provided hostname.");
+            if (ipv4Address == null)
+                throw new Exception("No IPv4 address found for the provided hostname.");
 
-        return ipv4Address.ToString().AsSpan();
+            return (ipv4Address.ToString(), portalString, port);
+        }
+        catch (SocketException)
+        {
+            Console.WriteLine("No valid portal found. Dev (Local) mode disabled.");
+
+            return (string.Empty, string.Empty, port);
+        }
+    }
+
+    public static async Task<bool> CheckUrl(string url, string fallbackUrl)
+    {
+        using var httpClient = new HttpClient();
+        
+        httpClient.Timeout = TimeSpan.FromSeconds(5);
+
+        try
+        {
+            var result = await httpClient.GetAsync(url);
+
+            if (!result.IsSuccessStatusCode)
+                Console.WriteLine($"{url} not reachable. Falling back to {fallbackUrl}");
+
+            return result.IsSuccessStatusCode;
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"{url} not reachable. Falling back to {fallbackUrl}");
+
+            return false;
+        }
     }
 }
